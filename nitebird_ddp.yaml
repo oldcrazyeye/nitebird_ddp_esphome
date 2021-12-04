@@ -1,0 +1,119 @@
+substitutions:
+  friendly_name: ddpbird3
+esphome:
+  name: ddpnitebird3
+  platform: ESP8266
+  board: esp01_1m
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+ota:
+  password: !secret ota_bird3_pass
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_pass
+  manual_ip:
+    static_ip: !secret ddpbird3_ip
+    gateway: !secret wifi_gateway
+    subnet: !secret wifi_subnet
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${friendly_name} Hotspot"
+    password: !secret ap3_pass
+
+captive_portal:
+
+web_server:
+
+output:
+  - platform: esp8266_pwm
+    pin: GPIO12 
+    id: pwm_red
+  - platform: esp8266_pwm
+    pin: GPIO13
+    id: pwm_green
+  - platform: esp8266_pwm
+    pin: GPIO14
+    id: pwm_blue
+  - platform: esp8266_pwm
+    pin: GPIO4
+    id: pwm_white
+
+light:
+  - platform: rgbw
+    name: $friendly_name
+    id: ddpnite3
+    red: pwm_red
+    green: pwm_green
+    blue: pwm_blue
+    white: pwm_white
+    color_interlock: true
+    effects:
+      - lambda:
+          name: DDP
+          update_interval: 0s
+          lambda: |-
+            // statics in light effects are like globals in Arduino
+            static float scaled_r = 0.0;
+            static float scaled_g = 0.0;
+            static float scaled_b = 0.0;
+            static std::unique_ptr<WiFiUDP> ddp_udp;
+          
+            // allocate and start UDP
+            // this is like the start() in an Arduino sketch
+            if (!ddp_udp) {
+              ddp_udp = make_unique<WiFiUDP>();
+              if (!ddp_udp->begin(4048)) {   // always listen on DDP port
+                return;
+              }
+            }
+            
+            // the rest is like the loop() in an Arduino sketch
+
+            // read UDP payload
+            std::vector<uint8_t> payload;
+            while (uint16_t packet_size = ddp_udp->parsePacket()) {
+              payload.resize(packet_size);
+              if (!ddp_udp->read(&payload[0], payload.size())) {
+                continue;
+              }
+            }
+        
+            // ignore small payload
+            if (payload.size() < 2) {
+              return;
+            }
+
+            // do the thing
+            float r = (float)payload[10]/255.0f;
+            float g = (float)payload[11]/255.0f;
+            float b = (float)payload[12]/255.0f;
+            
+            float m = 0.0f;
+            if ( (r>=g) && (r>=b) ) { m = r; }
+            else if ( g >= b )      { m = g; }
+            else                    { m = b; }
+            
+            if (m != 0.0f) {
+              scaled_r = r/m;
+              scaled_g = g/m;
+              scaled_b = b/m;
+            } else {
+              scaled_r = 0.0f;
+              scaled_g = 0.0f;
+              scaled_b = 0.0f;
+            }
+            auto call = id(ddpnite3).turn_on();
+            call.set_transition_length(0);
+            call.set_brightness(m); 
+            call.set_color_mode(ColorMode::RGB);
+            call.set_rgb(scaled_r, scaled_g, scaled_b);
+            call.set_publish(false);
+            call.set_save(false);
+            call.perform();
