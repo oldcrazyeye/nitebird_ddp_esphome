@@ -1,2 +1,2 @@
 # nitebird_ddp_esphome
-esphome yaml config for nitebird 4 channel RGBW smart wifi bulbs with ddp protocol for contol by wled
+Esphome yaml config for Nitebird/Gosund 4 channel RGBW smart wifi bulbs with ddp protocol for contol by Wled. Big thanks to Tony-Fav and Kauf
